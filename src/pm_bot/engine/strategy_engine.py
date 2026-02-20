@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import httpx
+
 from pm_bot.api.client import KalshiClient
 from pm_bot.api.models import Market, OrderType
 from pm_bot.data.store import DataStore
@@ -32,8 +34,18 @@ class StrategyEngine:
 
     async def evaluate_market(self, market: Market) -> list[Signal]:
         """Run all applicable strategies on a single market and execute approved signals."""
+        # Skip markets no strategy wants to trade (saves API calls, avoids 404s)
+        if not any(s.should_trade(market) for s in self._strategies):
+            return []
+
         try:
             ob_resp = await self._client.get_orderbook(market.ticker)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                log.debug("orderbook_not_available", ticker=market.ticker)
+            else:
+                log.warning("orderbook_fetch_failed", ticker=market.ticker, status=e.response.status_code)
+            return []
         except Exception:
             log.exception("orderbook_fetch_failed", ticker=market.ticker)
             return []

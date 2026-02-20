@@ -66,11 +66,13 @@ class SignalBasedStrategy(Strategy):
         sources: list[DataSource] | None = None,
         threshold_cents: int = 5,
         quantity: int = 1,
+        max_quantity: int = 0,
         min_confidence: float = 0.3,
     ) -> None:
         self._sources = sources or []
         self._threshold = threshold_cents
         self._quantity = quantity
+        self._max_quantity = max_quantity if max_quantity > 0 else quantity
         self._min_confidence = min_confidence
 
     def add_source(self, source: DataSource) -> None:
@@ -116,6 +118,8 @@ class SignalBasedStrategy(Strategy):
             return []
 
         signals: list[Signal] = []
+        signal_confidence = min(abs(edge) / 20.0, 1.0)
+        sized_qty = self._scale_quantity(avg_confidence, signal_confidence)
 
         if edge > 0:
             bid = orderbook.best_yes_bid
@@ -125,11 +129,11 @@ class SignalBasedStrategy(Strategy):
                 action=Action.BUY,
                 side=Side.YES,
                 price=min(price, fair_value_cents - 1),
-                quantity=self._quantity,
-                confidence=min(abs(edge) / 20.0, 1.0),
+                quantity=sized_qty,
+                confidence=signal_confidence,
                 reason=(
                     f"external fair value {fair_value_cents}c vs market {market_price}c "
-                    f"(edge={edge}c, sources={len(estimates)})"
+                    f"(edge={edge}c, sources={len(estimates)}, qty={sized_qty})"
                 ),
                 strategy_name=self.name,
             ))
@@ -141,13 +145,24 @@ class SignalBasedStrategy(Strategy):
                 action=Action.SELL,
                 side=Side.YES,
                 price=max(price, fair_value_cents + 1),
-                quantity=self._quantity,
-                confidence=min(abs(edge) / 20.0, 1.0),
+                quantity=sized_qty,
+                confidence=signal_confidence,
                 reason=(
                     f"external fair value {fair_value_cents}c vs market {market_price}c "
-                    f"(edge={edge}c, sources={len(estimates)})"
+                    f"(edge={edge}c, sources={len(estimates)}, qty={sized_qty})"
                 ),
                 strategy_name=self.name,
             ))
 
         return signals
+
+    def _scale_quantity(self, source_confidence: float, edge_confidence: float) -> int:
+        """Scale quantity between _quantity and _max_quantity based on confidence.
+
+        Uses the geometric mean of source confidence (how much we trust the data)
+        and edge confidence (how large the mispricing is) so both must be high
+        to reach max size.
+        """
+        combined = (source_confidence * edge_confidence) ** 0.5
+        raw = self._quantity + (self._max_quantity - self._quantity) * combined
+        return max(1, int(raw))

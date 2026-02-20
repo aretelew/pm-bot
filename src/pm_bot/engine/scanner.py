@@ -25,6 +25,18 @@ def has_liquidity_filter(m: Market) -> bool:
     return m.yes_bid > 0 and m.yes_ask > 0
 
 
+def weather_category_filter(m: Market) -> bool:
+    """Keep only markets in weather/climate categories or with weather tickers."""
+    if m.category.lower() in ("weather", "climate"):
+        return True
+    return (
+        m.ticker.startswith("KXHIGH")
+        or m.ticker.startswith("KXLOW")
+        or "SNOWM" in m.ticker
+        or m.ticker.startswith("KXRAIN")
+    )
+
+
 class MarketScanner:
     """Periodically polls the Kalshi REST API for open markets and persists them."""
 

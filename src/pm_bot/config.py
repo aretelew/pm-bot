@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     max_daily_loss: int = 500
 
     # Scanner defaults
-    scanner_poll_interval_seconds: int = 60
+    scanner_poll_interval_seconds: int = 15
+
+    # Weather provider API keys
+    openweathermap_api_key: str = ""
+    tomorrowio_api_key: str = ""
 
     @property
     def base_url(self) -> str:

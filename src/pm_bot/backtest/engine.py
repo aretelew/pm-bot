@@ -130,7 +130,7 @@ def _record_to_market(rec: MarketRecord) -> Market:
     return Market(
         ticker=rec.ticker,
         title=rec.title,
-        status=MarketStatus(rec.status) if rec.status in ("open", "closed", "settled") else MarketStatus.OPEN,
+        status=(MarketStatus(rec.status) if rec.status and rec.status in [s.value for s in MarketStatus] else MarketStatus.ACTIVE),
         event_ticker=rec.event_ticker,
         category=rec.category,
         yes_bid=rec.yes_bid,

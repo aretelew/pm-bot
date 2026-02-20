@@ -11,8 +11,17 @@ from pydantic import BaseModel, Field
 # --- Enums ---
 
 class MarketStatus(str, Enum):
-    OPEN = "open"
+    """Kalshi market lifecycle statuses (API response values)."""
+    INITIALIZED = "initialized"
+    INACTIVE = "inactive"
+    ACTIVE = "active"
     CLOSED = "closed"
+    DETERMINED = "determined"
+    DISPUTED = "disputed"
+    AMENDED = "amended"
+    FINALIZED = "finalized"
+    # Legacy values (filter/older API)
+    OPEN = "open"
     SETTLED = "settled"
 
 

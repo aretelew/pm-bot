@@ -78,20 +78,23 @@ class KalshiClient:
         return serialization.load_pem_private_key(pem_data, password=None)
 
     def _sign(self, timestamp_ms: str, method: str, path: str) -> str:
+        """Sign request per Kalshi docs: timestamp + method + path (no query params)."""
         message = f"{timestamp_ms}{method}{path}".encode()
         signature = self._private_key.sign(
             message,
             padding.PSS(
                 mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH,
+                salt_length=padding.PSS.DIGEST_LENGTH,
             ),
             hashes.SHA256(),
         )
         return base64.b64encode(signature).decode()
 
     def _auth_headers(self, method: str, path: str) -> dict[str, str]:
+        """Path for signing must include /trade-api/v2 prefix (Kalshi requirement)."""
         timestamp_ms = str(int(time.time() * 1000))
-        signature = self._sign(timestamp_ms, method, path)
+        sign_path = f"/trade-api/v2{path}"
+        signature = self._sign(timestamp_ms, method, sign_path)
         return {
             "KALSHI-ACCESS-KEY": self._api_key_id,
             "KALSHI-ACCESS-TIMESTAMP": timestamp_ms,
@@ -189,7 +192,15 @@ class KalshiClient:
         return EventsResponse.model_validate(data)
 
     async def get_orderbook(self, ticker: str, depth: int = 10) -> OrderBookResponse:
-        data = await self._get(f"/orderbook/{ticker}", params={"depth": depth})
+        data = await self._get(f"/markets/{ticker}/orderbook", params={"depth": depth})
+        # Normalize [price, quantity] arrays to {price, quantity} objects.
+        # Kalshi returns ascending order; we want best (highest) bid first.
+        ob = data.get("orderbook", data)
+        if ob:
+            for key in ("yes", "no"):
+                raw = ob.get(key, [])
+                levels = [{"price": p, "quantity": q} for p, q in raw] if raw else []
+                ob[key] = list(reversed(levels))  # best bid first
         return OrderBookResponse.model_validate(data)
 
     # --- Orders ---

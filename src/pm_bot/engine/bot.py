@@ -22,6 +22,9 @@ log = get_logger("engine.bot")
 
 STRATEGY_REGISTRY: dict[str, type[Strategy]] = {}
 
+# Strategies that need runtime configuration and can't be built via cls()
+_FACTORY_STRATEGIES: dict[str, str] = {"weather": "_make_weather_strategy"}
+
 
 def _load_strategies() -> None:
     from pm_bot.strategies.naive_value import NaiveValueStrategy
@@ -33,6 +36,33 @@ def _load_strategies() -> None:
     STRATEGY_REGISTRY["market_maker"] = MarketMakerStrategy
     STRATEGY_REGISTRY["arbitrage"] = CrossMarketArbStrategy
     STRATEGY_REGISTRY["signal_based"] = SignalBasedStrategy
+
+
+def _make_weather_strategy(settings: Settings) -> Strategy:
+    from pm_bot.strategies.signal import SignalBasedStrategy
+    from pm_bot.weather.providers import (
+        NOAAProvider,
+        OpenWeatherMapProvider,
+        TomorrowIOProvider,
+    )
+    from pm_bot.weather.source import WeatherDataSource
+
+    providers = [NOAAProvider()]
+    if settings.openweathermap_api_key:
+        providers.append(OpenWeatherMapProvider(settings.openweathermap_api_key))
+    if settings.tomorrowio_api_key:
+        providers.append(TomorrowIOProvider(settings.tomorrowio_api_key))
+
+    source = WeatherDataSource(providers)
+    strategy = SignalBasedStrategy(
+        sources=[source],
+        threshold_cents=5,
+        quantity=1,
+        max_quantity=10,
+        min_confidence=0.4,
+    )
+    strategy.name = "weather"
+    return strategy
 
 
 class Bot:
@@ -64,7 +94,14 @@ class Bot:
         _load_strategies()
         names = strategy_names or ["naive_value"]
         strategies: list[Strategy] = []
+        has_weather = False
         for name in names:
+            if name in _FACTORY_STRATEGIES:
+                factory = globals()[_FACTORY_STRATEGIES[name]]
+                strategies.append(factory(settings))
+                if name == "weather":
+                    has_weather = True
+                continue
             cls = STRATEGY_REGISTRY.get(name)
             if cls is None:
                 log.warning("unknown_strategy", name=name, available=list(STRATEGY_REGISTRY))
@@ -75,6 +112,9 @@ class Bot:
         self._scanner = MarketScanner(
             client, store, poll_interval=settings.scanner_poll_interval_seconds
         )
+        if has_weather:
+            from pm_bot.engine.scanner import weather_category_filter
+            self._scanner.add_filter(weather_category_filter)
         self._engine = StrategyEngine(
             client=client,
             order_manager=self._order_manager,
@@ -108,6 +148,11 @@ class Bot:
         )
 
         await self._portfolio.sync()
+        starting_balance = self._portfolio.snapshot.balance_dollars
+        log.info("starting_balance_fetched", balance_dollars=starting_balance)
+        await self._alerts.info(
+            f"Starting with balance ${starting_balance:.2f} (fetched from Kalshi)"
+        )
 
         while self._running:
             try:

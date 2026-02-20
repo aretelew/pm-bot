@@ -30,8 +30,8 @@ async def main() -> None:
         result = await session.exec(select(OrderBookSnapshot).limit(10000))
         snapshots = list(result.all())
 
-    strategies = [NaiveValueStrategy(threshold_cents=5, quantity=1)]
-    engine = BacktestEngine(strategies=strategies, starting_balance=10_000.0)
+    strategies = [NaiveValueStrategy(threshold_cents=2, quantity=1)]
+    engine = BacktestEngine(strategies=strategies, starting_balance=1000.0)
     result = await engine.run(market_records, snapshots)
 
     print_report(result)

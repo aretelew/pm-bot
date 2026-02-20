@@ -158,7 +158,7 @@ async def _init_db() -> None:
 
 
 @cli.command()
-@click.option("--interval", default=60, help="Poll interval in seconds.")
+@click.option("--interval", default=15, help="Poll interval in seconds.")
 def scan(interval: int) -> None:
     """Run the market scanner continuously."""
     asyncio.run(_scan(interval))
